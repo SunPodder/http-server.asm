@@ -41,10 +41,10 @@ STDOUT equ 1
 %endmacro
 
 %define CRLF 13, 10
-%define PORT 8000
 
 
 section .data
+	start_msg 					db "listening on http://127.0.0.1:8000", 10, 0
 	socket_err_msg 				db "Error creating socket", 10, 0
 	socket_options_err_msg 		db "Error setting socket options", 10, 0
 	bind_err_msg				db "Error binding the socket", 10, 0
@@ -163,6 +163,7 @@ _listen:
 	cmp rax, 0
 	jne _listen_err					; if rax != 0, there is an error
 
+	print start_msg
 
 ; accept incoming connections
 __accept_loop:
