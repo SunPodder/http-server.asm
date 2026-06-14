@@ -76,6 +76,13 @@ section .data
 
 	response_500_len equ $ - response_500
 
+	response_405:
+			.status 			db "HTTP/1.1 405 Method Not Allowed", CRLF
+			.content_type 		db "Content-Type: text/html", CRLF, CRLF
+			.body 				db "<h1>405 Method Not Allowed</h1>", CRLF, CRLF
+
+	response_405_len equ $ - response_405
+
 
 	server_addr:											; 16 bytes
 			.sa_family			dw AF_INET					; 2 bytes
@@ -189,10 +196,15 @@ _read:
 	syscall
 
 	cmp rax, 0
-	jle _read_err					; if rax =< 0, there is an error
+	jl _read_err					; if rax < 0, there is an error
+	je _close						; if rax == 0, client disconnected
 
 ; parse the request
 _get_requested_file:
+	; verify request method is GET only
+	cmp dword [request], "GET "
+	jne _method_not_allowed
+
 	mov rax, request
 	add rax, 5						; skip the "GET /" part
 
@@ -208,7 +220,21 @@ _get_requested_file:
 
 	mov byte [rdi], 0				; null terminate the request
 									; rax - pointer to the requested file
-	
+
+	; reject absolute paths (starting with /)
+	cmp byte [rax], '/'
+	je _404_not_found
+
+	; reject path traversal (contains "..")
+	mov rdi, rax
+.check_dotdot:
+	movzx rbx, word [rdi]
+	cmp bx, 0x2E2E					; ".."
+	je _404_not_found
+	inc rdi
+	cmp byte [rdi], 0
+	jne .check_dotdot
+
 	mov [file_path], rax			; store the file path
 	
 _send_file:
@@ -331,6 +357,22 @@ _exit:
 
 
 
+
+_method_not_allowed:
+	print request_log
+	mov rax, request
+	call _print
+	print request_code_404
+
+	; send 405 response
+	mov rax, SYS_SEND
+	mov rdi, [client_fd]
+	mov rsi, response_405
+	mov rdx, response_405_len
+	mov r10, 0
+	syscall
+
+	jmp _close
 
 _serve_index_html:
 	mov rax, index_html
